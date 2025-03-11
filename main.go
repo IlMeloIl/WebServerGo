@@ -1,17 +1,53 @@
 package main
 
 import (
+	"GoServer/internal/database"
+	"database/sql"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	DB             *database.Queries
+	Platform       string
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserId    uuid.UUID `json:"user_id"`
 }
 
 func main() {
-	var apiCfg apiConfig
+	godotenv.Load()
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var apiCfg apiConfig = apiConfig{
+		fileserverHits: atomic.Int32{},
+		DB:             database.New(db),
+		Platform:       os.Getenv("PLATFORM"),
+	}
 	serveMux := http.NewServeMux()
 	middleware := apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("."))))
 	serveMux.Handle("/app/", middleware)
@@ -22,7 +58,10 @@ func main() {
 	})
 	serveMux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	serveMux.HandleFunc("POST /admin/reset", apiCfg.middlewareMetricsReset)
-	serveMux.HandleFunc("POST /api/validate_chirp", handlerChirpValidate)
+	serveMux.HandleFunc("POST /api/users", apiCfg.createUser)
+	serveMux.HandleFunc("POST /api/chirps", apiCfg.createChirp)
+	serveMux.HandleFunc("GET /api/chirps", apiCfg.getChirps)
+	serveMux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirpByID)
 	if err := http.ListenAndServe(":8080", serveMux); err != nil {
 		fmt.Println(err)
 	}
