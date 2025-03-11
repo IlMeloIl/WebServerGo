@@ -25,17 +25,17 @@ func main() {
 	var apiCfg apiConfig
 	serveMux := http.NewServeMux()
 	serveMux.Handle("/app/", http.StripPrefix("/app", apiCfg.middlewareMetricsInc(http.FileServer(http.Dir(".")))))
-	serveMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	serveMux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, `{Hits: %d}`, apiCfg.fileserverHits.Load())
 	})
-	serveMux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
+	serveMux.HandleFunc("POST /reset", func(w http.ResponseWriter, r *http.Request) {
 		apiCfg.middlewareMetricsReset()
 		w.WriteHeader(http.StatusOK)
 	})
