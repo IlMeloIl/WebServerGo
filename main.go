@@ -19,13 +19,17 @@ type apiConfig struct {
 	fileserverHits atomic.Int32
 	DB             *database.Queries
 	Platform       string
+	Secret         string
 }
 
 type User struct {
-	ID        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
+	ID             uuid.UUID `json:"id"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Email          string    `json:"email"`
+	HashedPassword string    `json:"password"`
+	AccessToken    string    `json:"token"`
+	RefreshToken   string    `json:"refresh_token"`
 }
 
 type Chirp struct {
@@ -47,6 +51,7 @@ func main() {
 		fileserverHits: atomic.Int32{},
 		DB:             database.New(db),
 		Platform:       os.Getenv("PLATFORM"),
+		Secret:         os.Getenv("SECRET_KEY"),
 	}
 	serveMux := http.NewServeMux()
 	middleware := apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("."))))
@@ -62,6 +67,9 @@ func main() {
 	serveMux.HandleFunc("POST /api/chirps", apiCfg.createChirp)
 	serveMux.HandleFunc("GET /api/chirps", apiCfg.getChirps)
 	serveMux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirpByID)
+	serveMux.HandleFunc("POST /api/login", apiCfg.login)
+	serveMux.HandleFunc("POST /api/refresh", apiCfg.refresh)
+	serveMux.HandleFunc("POST /api/revoke", apiCfg.revoke)
 	if err := http.ListenAndServe(":8080", serveMux); err != nil {
 		fmt.Println(err)
 	}
