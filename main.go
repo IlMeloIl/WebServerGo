@@ -70,6 +70,8 @@ func main() {
 	serveMux.HandleFunc("POST /api/login", apiCfg.login)
 	serveMux.HandleFunc("POST /api/refresh", apiCfg.refresh)
 	serveMux.HandleFunc("POST /api/revoke", apiCfg.revoke)
+	serveMux.HandleFunc("PUT /api/users", apiCfg.updateUser)
+	serveMux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.deleteChirp)
 	if err := http.ListenAndServe(":8080", serveMux); err != nil {
 		fmt.Println(err)
 	}

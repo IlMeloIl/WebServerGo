@@ -270,3 +270,82 @@ func (cfg *apiConfig) revoke(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusNoContent, nil)
 
 }
+
+func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error getting token", err)
+		return
+	}
+
+	params := struct {
+		Email          string `json:"email"`
+		HashedPassword string `json:"password"`
+	}{
+		Email:          "",
+		HashedPassword: "",
+	}
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error unmarshalling login parameters", err)
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error validating token", err)
+		return
+	}
+
+	hashedPassword, err := auth.HashPassword(params.HashedPassword)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error hashing password", err)
+		return
+	}
+
+	newUser, err := cfg.DB.UpdateUser(r.Context(), database.UpdateUserParams{ID: userUUID, Email: params.Email, HashedPassword: hashedPassword})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error updating user", err)
+		return
+	}
+	respondWithJSON(w, http.StatusOK, User{ID: newUser.ID, CreatedAt: newUser.CreatedAt, UpdatedAt: newUser.UpdatedAt, Email: newUser.Email})
+
+}
+
+func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request) {
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error getting token", err)
+		return
+	}
+
+	userUUID, err := auth.ValidateJWT(token, cfg.Secret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error validating token", err)
+		return
+	}
+
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Invalid chirp ID format", err)
+		return
+	}
+
+	chirp, err := cfg.DB.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondWithError(w, http.StatusNotFound, "Chirp not found", nil)
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Error retrieving chirp", err)
+		return
+	}
+
+	if chirp.UserID != userUUID {
+		respondWithError(w, http.StatusForbidden, "Cannot delete another user's chirp", nil)
+		return
+	}
+
+	cfg.DB.DeleteChirpByID(r.Context(), chirpID)
+	respondWithJSON(w, http.StatusNoContent, nil)
+
+}
