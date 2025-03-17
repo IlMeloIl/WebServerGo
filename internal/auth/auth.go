@@ -76,3 +76,11 @@ func MakeRefreshToken() string {
 	s := hex.EncodeToString(key)
 	return s
 }
+
+func GetAPIKey(headers http.Header) (string, error) {
+	ApiKey, err := GetBearerToken(headers)
+	if err != nil {
+		return "", fmt.Errorf("missing api key")
+	}
+	return ApiKey, nil
+}

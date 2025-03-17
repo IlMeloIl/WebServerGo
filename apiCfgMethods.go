@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	auth "GoServer/internal/auth"
@@ -76,7 +77,7 @@ func (cfg *apiConfig) createUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error creating User", err)
 	}
 
-	respondWithJSON(w, http.StatusCreated, User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email})
+	respondWithJSON(w, http.StatusCreated, User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, IsChirpyRed: user.IsChirpyRed})
 }
 
 func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
@@ -119,6 +120,33 @@ func (cfg *apiConfig) createChirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
+	s := r.URL.Query().Get("author_id")
+	order := r.URL.Query().Get("sort")
+	if s != "" {
+		chirps, err := cfg.DB.GetChirpsByUserID(r.Context(), uuid.MustParse(s))
+		if err != nil {
+			respondWithError(w, http.StatusInternalServerError, "Couldn't get all chirps", err)
+			return
+		}
+		chirpsResponse := make([]Chirp, len(chirps))
+		for i, chirp := range chirps {
+			chirpsResponse[i] = Chirp{
+				ID:        chirp.ID,
+				CreatedAt: chirp.CreatedAt,
+				UpdatedAt: chirp.UpdatedAt,
+				Body:      chirp.Body,
+				UserId:    chirp.UserID,
+			}
+		}
+		if order == "asc" || order == "" {
+			respondWithJSON(w, http.StatusOK, chirpsResponse)
+			return
+		}
+		slices.Reverse(chirpsResponse)
+		respondWithJSON(w, http.StatusOK, chirpsResponse)
+		return
+	}
+
 	chirps, err := cfg.DB.GetChirps(r.Context())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't get all chirps", err)
@@ -133,6 +161,11 @@ func (cfg *apiConfig) getChirps(w http.ResponseWriter, r *http.Request) {
 			UserId:    chirp.UserID,
 		}
 	}
+	if order == "asc" || order == "" {
+		respondWithJSON(w, http.StatusOK, chirpsResponse)
+		return
+	}
+	slices.Reverse(chirpsResponse)
 	respondWithJSON(w, http.StatusOK, chirpsResponse)
 }
 
@@ -201,7 +234,7 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request) {
 
 	cfg.DB.CreateRefreshToken(r.Context(), database.CreateRefreshTokenParams{Token: refresh_token, UserID: user.ID, ExpiresAt: time.Now().Add(time.Hour * 1440)})
 
-	respondWithJSON(w, http.StatusOK, User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, AccessToken: token, RefreshToken: refresh_token})
+	respondWithJSON(w, http.StatusOK, User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, AccessToken: token, RefreshToken: refresh_token, IsChirpyRed: user.IsChirpyRed})
 
 }
 
@@ -307,7 +340,7 @@ func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusInternalServerError, "Error updating user", err)
 		return
 	}
-	respondWithJSON(w, http.StatusOK, User{ID: newUser.ID, CreatedAt: newUser.CreatedAt, UpdatedAt: newUser.UpdatedAt, Email: newUser.Email})
+	respondWithJSON(w, http.StatusOK, User{ID: newUser.ID, CreatedAt: newUser.CreatedAt, UpdatedAt: newUser.UpdatedAt, Email: newUser.Email, IsChirpyRed: newUser.IsChirpyRed})
 
 }
 
@@ -346,6 +379,66 @@ func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cfg.DB.DeleteChirpByID(r.Context(), chirpID)
+	respondWithJSON(w, http.StatusNoContent, nil)
+
+}
+
+func (cfg *apiConfig) polkaWebhook(w http.ResponseWriter, r *http.Request) {
+	ApiKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Error getting API key", err)
+		return
+	}
+
+	if ApiKey != cfg.PolkaKey {
+		respondWithError(w, http.StatusUnauthorized, "Invalid API key", nil)
+		return
+	}
+
+	params := struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}{
+		Event: "",
+		Data: struct {
+			UserID string `json:"user_id"`
+		}{UserID: ""},
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&params); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error unmarshalling webhook parameters", err)
+		return
+	}
+
+	if params.Event != "user.upgraded" {
+		respondWithError(w, http.StatusNoContent, "Invalid event", nil)
+		return
+	}
+
+	user_id, err := uuid.Parse(params.Data.UserID)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Invalid user ID format", err)
+		return
+	}
+
+	_, err = cfg.DB.GetUserByID(r.Context(), user_id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			respondWithError(w, http.StatusNotFound, "User not found", nil)
+			return
+		}
+		respondWithError(w, http.StatusInternalServerError, "Error retrieving user", err)
+		return
+	}
+
+	_, err = cfg.DB.UpgradeUserToChirpyRed(r.Context(), user_id)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error upgrading user", err)
+		return
+	}
+
 	respondWithJSON(w, http.StatusNoContent, nil)
 
 }

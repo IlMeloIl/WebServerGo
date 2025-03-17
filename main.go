@@ -20,6 +20,7 @@ type apiConfig struct {
 	DB             *database.Queries
 	Platform       string
 	Secret         string
+	PolkaKey       string
 }
 
 type User struct {
@@ -30,6 +31,7 @@ type User struct {
 	HashedPassword string    `json:"password"`
 	AccessToken    string    `json:"token"`
 	RefreshToken   string    `json:"refresh_token"`
+	IsChirpyRed    bool      `json:"is_chirpy_red"`
 }
 
 type Chirp struct {
@@ -52,6 +54,7 @@ func main() {
 		DB:             database.New(db),
 		Platform:       os.Getenv("PLATFORM"),
 		Secret:         os.Getenv("SECRET_KEY"),
+		PolkaKey:       os.Getenv("POLKA_KEY"),
 	}
 	serveMux := http.NewServeMux()
 	middleware := apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir("."))))
@@ -72,6 +75,7 @@ func main() {
 	serveMux.HandleFunc("POST /api/revoke", apiCfg.revoke)
 	serveMux.HandleFunc("PUT /api/users", apiCfg.updateUser)
 	serveMux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.deleteChirp)
+	serveMux.HandleFunc("POST /api/polka/webhooks", apiCfg.polkaWebhook)
 	if err := http.ListenAndServe(":8080", serveMux); err != nil {
 		fmt.Println(err)
 	}
