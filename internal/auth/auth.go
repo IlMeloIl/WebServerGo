@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -67,7 +68,11 @@ func GetBearerToken(headers http.Header) (string, error) {
 	if bearer == "" {
 		return "", fmt.Errorf("missing authorization header")
 	}
-	return bearer[7:], nil
+	splitAuth := strings.Split(bearer, " ")
+	if len(splitAuth) != 2 || splitAuth[0] != "Bearer" {
+		return "", fmt.Errorf("invalid authorization header")
+	}
+	return splitAuth[1], nil
 }
 
 func MakeRefreshToken() string {
